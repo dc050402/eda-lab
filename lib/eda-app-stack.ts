@@ -114,7 +114,19 @@ export class EDAAppStack extends cdk.Stack {
       }
     );
 
-
+    const addMetadataFn = new lambdanode.NodejsFunction(
+      this,
+      "addMetadataFn",
+      {
+        runtime: lambda.Runtime.NODEJS_22_X,
+        entry: `${__dirname}/../lambdas/addImageMetadata.ts`,
+        timeout: cdk.Duration.seconds(15),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: imagesTable.tableName,
+        },
+      }
+    );
 
     // S3 --> SQS
     imagesBucket.addEventNotification(
@@ -139,6 +151,17 @@ export class EDAAppStack extends cdk.Stack {
       batchSize: 5,
       maxBatchingWindow: cdk.Duration.seconds(10),
     });
+
+    newImageTopic.addSubscription(
+      new subs.LambdaSubscription(addMetadataFn, {
+        filterPolicy: {
+          metadata_type: sns.SubscriptionFilter.stringFilter({
+            allowlist: ["Caption", "Date", "Photographer"],
+          }),
+        },
+      })
+    );
+
   
 
     mailerFn.addEventSource(newImageMailEventSource);
@@ -149,8 +172,9 @@ export class EDAAppStack extends cdk.Stack {
     // Permissions
 
     imagesBucket.grantRead(persistImageDataFn);
-
     imagesTable.grantReadWriteData(persistImageDataFn);
+    imagesTable.grantReadWriteData(addMetadataFn);
+
 
 
     // Output
@@ -158,6 +182,11 @@ export class EDAAppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "bucketName", {
       value: imagesBucket.bucketName,
     });
+    
+    new cdk.CfnOutput(this, "SNS Topic ARN", {
+      value: newImageTopic.topicArn,
+    });
+
   }
 
   
